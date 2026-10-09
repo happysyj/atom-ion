@@ -50,6 +50,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onBackToApp 
   // Google OAuth User State (from Firebase Auth)
   const [googleUser, setGoogleUser] = useState<User | null>(null);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [googleAuthError, setGoogleAuthError] = useState<string | null>(null);
   const [exportUrl, setExportUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -101,14 +102,24 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onBackToApp 
   };
 
   const handleGoogleLogin = async () => {
+    if (isGoogleLoading) return;
     setIsGoogleLoading(true);
+    setGoogleAuthError(null);
     try {
       const res = await googleSignIn();
       if (res?.user) {
         setGoogleUser(res.user);
       }
-    } catch (err) {
-      alert('Google 로그인 중 오류가 발생했습니다.');
+    } catch (err: any) {
+      const errorCode = err?.code || '';
+      if (errorCode === 'auth/popup-blocked') {
+        setGoogleAuthError('브라우저에서 팝업이 차단되었습니다. 팝업 허용 후 다시 시도해주세요.');
+      } else if (
+        errorCode !== 'auth/popup-closed-by-user' &&
+        errorCode !== 'auth/cancelled-popup-request'
+      ) {
+        setGoogleAuthError('Google 로그인 중 오류가 발생했습니다. 다시 시도해주세요.');
+      }
     } finally {
       setIsGoogleLoading(false);
     }
@@ -118,6 +129,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onBackToApp 
     await logout();
     setGoogleUser(null);
     setExportUrl(null);
+    setGoogleAuthError(null);
   };
 
   const handleExportToGoogleSheets = async () => {
@@ -127,12 +139,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onBackToApp 
     }
 
     setIsGoogleLoading(true);
+    setGoogleAuthError(null);
     try {
       const title = `[과학3] 원소기호&이온식 성적표_${new Date().toLocaleDateString('ko-KR').replace(/\./g, '')}`;
       const res = await createGoogleSpreadsheetWithRecords(title, records);
       setExportUrl(res.spreadsheetUrl);
     } catch (err: unknown) {
-      alert((err as Error).message || '스프레드시트 내보내기 실패');
+      setGoogleAuthError((err as Error).message || '스프레드시트 내보내기에 실패했습니다.');
     } finally {
       setIsGoogleLoading(false);
     }
@@ -140,7 +153,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onBackToApp 
 
   const handleDownloadCsv = () => {
     if (records.length === 0) {
-      alert('다운로드할 성적 기록이 없습니다.');
+      setStatusMessage('다운로드할 성적 기록이 없습니다.');
       return;
     }
 
@@ -397,6 +410,21 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onBackToApp 
           )}
         </div>
       </div>
+
+      {googleAuthError && (
+        <div className="mb-6 p-3.5 rounded-2xl bg-rose-950/60 border border-rose-800 text-rose-300 text-xs flex items-center justify-between shadow-lg">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+            <span>{googleAuthError}</span>
+          </div>
+          <button
+            onClick={() => setGoogleAuthError(null)}
+            className="text-xs text-rose-400 hover:text-white underline ml-3 cursor-pointer shrink-0"
+          >
+            닫기
+          </button>
+        </div>
+      )}
 
       {/* Search & Records Table Card */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl backdrop-blur-xl">

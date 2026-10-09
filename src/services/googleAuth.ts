@@ -43,6 +43,11 @@ export const initAuth = (
 };
 
 export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
+  // 이미 로그인 팝업이 진행 중이면 중복 요청 방지
+  if (isSigningIn) {
+    return null;
+  }
+
   try {
     isSigningIn = true;
     const result = await signInWithPopup(auth, provider);
@@ -53,8 +58,18 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
 
     cachedAccessToken = credential.accessToken;
     return { user: result.user, accessToken: cachedAccessToken };
-  } catch (error: unknown) {
-    console.error('Google Sign In error:', error);
+  } catch (error: any) {
+    const errorCode = error?.code || '';
+    // 사용자가 팝업을 닫았거나 다른 요청에 의해 취소된 경우는 정상 취소 처리
+    if (
+      errorCode === 'auth/cancelled-popup-request' ||
+      errorCode === 'auth/popup-closed-by-user'
+    ) {
+      return null;
+    }
+
+    // 예상치 못한 인증 실패만 로그 기록
+    console.error('Google Sign In authentication error:', error);
     throw error;
   } finally {
     isSigningIn = false;

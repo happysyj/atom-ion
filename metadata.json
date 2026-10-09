@@ -2,5 +2,7 @@
   "name": "원소 기호 & 이온식 마스터",
   "description": "중학교 3학년 필수 화학 언어인 원소 기호 20종과 주요 이온식을 학습하는 4단계 인터랙티브 퀴즈 게임",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }
