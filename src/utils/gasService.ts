@@ -8,6 +8,7 @@
 export const WEB_APP_URL = "여기에_웹앱_URL_입력";
 
 import { StudentRecord } from '../types';
+import { saveRecordToFirestore, fetchRecordsFromFirestore } from '../services/firestoreService';
 
 const STORAGE_KEY = 'CHEMISTRY_QUIZ_RECORDS';
 const CUSTOM_URL_KEY = 'CHEMISTRY_QUIZ_CUSTOM_GAS_URL';
@@ -70,7 +71,7 @@ export async function saveRecordToGAS(record: {
   score: number;
   time: number;
   date?: string;
-}): Promise<{ success: boolean; message: string; fromGAS: boolean }> {
+}): Promise<{ success: boolean; message: string; fromGAS: boolean; fromFirestore?: boolean }> {
   const targetUrl = getActiveWebAppUrl();
   const recordWithMeta: StudentRecord = {
     id: 'rec_' + Date.now(),
@@ -86,102 +87,129 @@ export async function saveRecordToGAS(record: {
     }),
   };
 
-  // 항상 로컬에도 안전하게 백업 저장
+  // 1. 항상 로컬에도 안전하게 백업 저장
   saveLocalRecord(recordWithMeta);
 
-  // GAS URL이 유효하지 않으면 로컬 저장으로 성공 처리
-  if (!targetUrl || targetUrl === '여기에_웹앱_URL_입력' || !targetUrl.startsWith('http')) {
-    return {
-      success: true,
-      message: '로컬 브라우저 저장소에 성공적으로 저장되었습니다. (GAS 연동 URL이 설정되면 실시간 스프레드시트로도 동기화됩니다.)',
-      fromGAS: false,
-    };
+  let savedToFirestore = false;
+  // 2. Firebase Cloud Firestore에 즉시 저장
+  try {
+    await saveRecordToFirestore(recordWithMeta);
+    savedToFirestore = true;
+  } catch (fsErr) {
+    console.warn('Firestore 저장 실패 (로컬/GAS 백업 사용):', fsErr);
   }
 
-  try {
-    const payload = {
-      action: 'save',
-      name: record.name,
-      score: record.score,
-      time: record.time,
-      date: recordWithMeta.date,
+  // 3. GAS URL이 유효하면 GAS 스프레드시트로도 동시 전송
+  let savedToGAS = false;
+  if (targetUrl && targetUrl !== '여기에_웹앱_URL_입력' && targetUrl.startsWith('http')) {
+    try {
+      const payload = {
+        action: 'save',
+        name: record.name,
+        score: record.score,
+        time: record.time,
+        date: recordWithMeta.date,
+      };
+
+      await fetch(targetUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8',
+        },
+        body: JSON.stringify(payload),
+      });
+      savedToGAS = true;
+    } catch (err) {
+      console.warn('GAS Save failed, using local/firestore backup:', err);
+    }
+  }
+
+  if (savedToFirestore && savedToGAS) {
+    return {
+      success: true,
+      message: '클라우드 데이터베이스 및 Google 스프레드시트에 성공적으로 저장되었습니다!',
+      fromGAS: true,
+      fromFirestore: true,
     };
-
-    // Apps Script의 CORS 제약을 방지하기 위해 mode: 'no-cors' 또는 standard POST
-    // 일반적으로 웹앱은 Content-Type text/plain으로 전송할 때 프리플라이트 문제 없이 잘 수신함
-    await fetch(targetUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8',
-      },
-      body: JSON.stringify(payload),
-    });
-
+  } else if (savedToFirestore) {
+    return {
+      success: true,
+      message: '클라우드 데이터베이스(Firebase Firestore)에 성공적으로 동기화되었습니다!',
+      fromGAS: false,
+      fromFirestore: true,
+    };
+  } else if (savedToGAS) {
     return {
       success: true,
       message: 'Google Apps Script (스프레드시트)에 점수가 성공적으로 전송되었습니다!',
       fromGAS: true,
     };
-  } catch (err) {
-    console.warn('GAS Save failed, using local backup:', err);
-    return {
-      success: true,
-      message: '로컬에 안전하게 저장되었습니다. (네트워크 상태 또는 GAS 배포 설정을 확인해주세요)',
-      fromGAS: false,
-    };
   }
+
+  return {
+    success: true,
+    message: '로컬 브라우저 저장소에 안전하게 저장되었습니다.',
+    fromGAS: false,
+  };
 }
 
 /**
- * Google Apps Script Web App으로부터 전체 기록 불러오기
- * 요청 포맷: { action: "get" } 또는 GET 파라미터 ?action=get
+ * 클라우드 데이터베이스 및 Google Apps Script로부터 전체 기록 불러오기
  */
 export async function getRecordsFromGAS(): Promise<{
   records: StudentRecord[];
   fromGAS: boolean;
+  fromFirestore?: boolean;
   message?: string;
 }> {
-  const targetUrl = getActiveWebAppUrl();
-
-  if (!targetUrl || targetUrl === '여기에_웹앱_URL_입력' || !targetUrl.startsWith('http')) {
-    return {
-      records: getLocalRecords(),
-      fromGAS: false,
-      message: '로컬 데이터가 로드되었습니다.',
-    };
-  }
-
+  // 1. Firebase Firestore에서 최신 데이터 조회 시도
   try {
-    const fetchUrl = new URL(targetUrl);
-    fetchUrl.searchParams.set('action', 'get');
-    fetchUrl.searchParams.set('_t', Date.now().toString()); // 캐시 방지
-
-    const res = await fetch(fetchUrl.toString(), {
-      method: 'GET',
-    });
-
-    if (!res.ok) {
-      throw new Error(`HTTP Error: ${res.status}`);
+    const firestoreRecords = await fetchRecordsFromFirestore();
+    if (firestoreRecords && firestoreRecords.length > 0) {
+      return {
+        records: firestoreRecords,
+        fromGAS: false,
+        fromFirestore: true,
+        message: '클라우드 데이터베이스에서 최신 성적을 불러왔습니다.',
+      };
     }
-
-    const data = await res.json();
-    if (Array.isArray(data)) {
-      return { records: data, fromGAS: true };
-    } else if (data && Array.isArray(data.records)) {
-      return { records: data.records, fromGAS: true };
-    } else if (data && Array.isArray(data.data)) {
-      return { records: data.data, fromGAS: true };
-    }
-
-    return { records: getLocalRecords(), fromGAS: false };
-  } catch (err) {
-    console.warn('Failed to fetch from GAS, using local storage fallback:', err);
-    return {
-      records: getLocalRecords(),
-      fromGAS: false,
-      message: '원격 서버 연결 실패로 로컬 저장소 기록을 표시합니다.',
-    };
+  } catch (fsErr) {
+    console.warn('Firestore 조회 실패, 대체 수단 시도:', fsErr);
   }
+
+  // 2. Google Apps Script 연동 확인
+  const targetUrl = getActiveWebAppUrl();
+  if (targetUrl && targetUrl !== '여기에_웹앱_URL_입력' && targetUrl.startsWith('http')) {
+    try {
+      const fetchUrl = new URL(targetUrl);
+      fetchUrl.searchParams.set('action', 'get');
+      fetchUrl.searchParams.set('_t', Date.now().toString());
+
+      const res = await fetch(fetchUrl.toString(), {
+        method: 'GET',
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          return { records: data, fromGAS: true };
+        } else if (data && Array.isArray(data.records)) {
+          return { records: data.records, fromGAS: true };
+        } else if (data && Array.isArray(data.data)) {
+          return { records: data.data, fromGAS: true };
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch from GAS, using local storage fallback:', err);
+    }
+  }
+
+  // 3. 로컬 스토리지 데이터 반환
+  return {
+    records: getLocalRecords(),
+    fromGAS: false,
+    message: '로컬 저장소의 성적 데이터를 불러왔습니다.',
+  };
 }
 
 /**

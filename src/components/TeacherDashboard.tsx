@@ -15,6 +15,11 @@ import {
   Trash2,
   Settings,
   Save,
+  HelpCircle,
+  Info,
+  Globe,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { StudentRecord } from '../types';
 import {
@@ -51,7 +56,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onBackToApp 
   const [googleUser, setGoogleUser] = useState<User | null>(null);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [googleAuthError, setGoogleAuthError] = useState<string | null>(null);
+  const [authErrorCode, setAuthErrorCode] = useState<string | null>(null);
+  const [showDomainGuide, setShowDomainGuide] = useState(false);
   const [exportUrl, setExportUrl] = useState<string | null>(null);
+
+  const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
+  const isGitHubPages = currentHostname.endsWith('github.io');
 
   useEffect(() => {
     initAuth((user) => {
@@ -76,7 +86,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onBackToApp 
     try {
       const res = await getRecordsFromGAS();
       setRecords(res.records);
-      if (res.fromGAS) {
+      if (res.fromFirestore) {
+        setStatusMessage('클라우드 데이터베이스(Firebase Firestore)에서 실시간 학생 성적을 동기화했습니다.');
+      } else if (res.fromGAS) {
         setStatusMessage('Google Apps Script(스프레드시트)에서 최신 데이터를 동기화했습니다.');
       } else {
         setStatusMessage('로컬 브라우저 저장소의 성적 데이터를 불러왔습니다.');
@@ -105,20 +117,28 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onBackToApp 
     if (isGoogleLoading) return;
     setIsGoogleLoading(true);
     setGoogleAuthError(null);
+    setAuthErrorCode(null);
     try {
       const res = await googleSignIn();
       if (res?.user) {
         setGoogleUser(res.user);
+        setShowDomainGuide(false);
       }
     } catch (err: any) {
       const errorCode = err?.code || '';
-      if (errorCode === 'auth/popup-blocked') {
+      setAuthErrorCode(errorCode);
+      if (errorCode === 'auth/unauthorized-domain') {
+        setGoogleAuthError(
+          `현재 배포 주소(${currentHostname || 'github.io'})가 Firebase 승인 도메인(Authorized Domain)에 등록되지 않았습니다.`
+        );
+        setShowDomainGuide(true);
+      } else if (errorCode === 'auth/popup-blocked') {
         setGoogleAuthError('브라우저에서 팝업이 차단되었습니다. 팝업 허용 후 다시 시도해주세요.');
       } else if (
         errorCode !== 'auth/popup-closed-by-user' &&
         errorCode !== 'auth/cancelled-popup-request'
       ) {
-        setGoogleAuthError('Google 로그인 중 오류가 발생했습니다. 다시 시도해주세요.');
+        setGoogleAuthError('Google 로그인 중 오류가 발생했습니다. 아래 도메인 설정 또는 대체 방법을 확인해주세요.');
       }
     } finally {
       setIsGoogleLoading(false);
@@ -316,113 +336,214 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ onBackToApp 
           <div className="text-2xl font-black text-cyan-300 mt-1">{averageScore}점</div>
         </div>
         <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4">
-          <span className="text-xs text-slate-400">연동 상태</span>
-          <div className="text-xs font-medium text-emerald-300 mt-2 truncate">
-            {getActiveWebAppUrl() && getActiveWebAppUrl() !== '여기에_웹앱_URL_입력'
-              ? 'Apps Script 연동됨'
-              : '로컬 저장소 백업'}
+          <span className="text-xs text-slate-400">데이터베이스 연동</span>
+          <div className="text-xs font-semibold text-emerald-400 mt-2 truncate flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>클라우드 DB (Firestore)</span>
           </div>
         </div>
       </div>
 
-      {/* Google Sheets Direct OAuth Integration Card */}
-      <div className="bg-gradient-to-r from-emerald-950/40 to-teal-950/30 border border-emerald-800/40 rounded-2xl p-4 sm:p-5 mb-6 backdrop-blur-sm flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-900/60 border border-emerald-700/60 text-emerald-300 flex items-center justify-center shrink-0">
-            <FileSpreadsheet className="w-6 h-6" />
+      {/* Google Sheets Direct OAuth Integration Card (Selected Element) */}
+      <div className="bg-gradient-to-r from-emerald-950/40 to-teal-950/30 border border-emerald-800/40 rounded-2xl p-4 sm:p-5 mb-6 backdrop-blur-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-900/60 border border-emerald-700/60 text-emerald-300 flex items-center justify-center shrink-0">
+              <FileSpreadsheet className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white flex flex-wrap items-center gap-2">
+                <span>Google Sheets 원클릭 연동 및 내보내기</span>
+                {googleUser ? (
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-900/80 text-emerald-300 border border-emerald-700 font-normal">
+                    {googleUser.email} 연결됨
+                  </span>
+                ) : isGitHubPages ? (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-950/80 text-amber-300 border border-amber-700 font-medium flex items-center gap-1">
+                    <Globe className="w-3 h-3" />
+                    GitHub Pages 배포 환경
+                  </span>
+                ) : null}
+              </h3>
+              <p className="text-xs text-slate-300 mt-0.5">
+                선생님의 Google 계정으로 로그인하여 내 Google 드라이브에 학생 성적 스프레드시트를 자동으로 생성할 수 있습니다.
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <span>Google Sheets 원클릭 연동 및 내보내기</span>
-              {googleUser && (
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-900/80 text-emerald-300 border border-emerald-700 font-normal">
-                  {googleUser.email} 연결됨
-                </span>
-              )}
-            </h3>
-            <p className="text-xs text-slate-300 mt-0.5">
-              선생님의 Google 계정으로 로그인하여 내 Google 드라이브에 학생 성적 스프레드시트를 자동으로 생성할 수 있습니다.
-            </p>
-          </div>
-        </div>
 
-        <div className="flex items-center gap-3">
-          {googleUser ? (
-            <>
-              <button
-                onClick={handleExportToGoogleSheets}
-                disabled={isGoogleLoading}
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-600/20 cursor-pointer"
-              >
-                {isGoogleLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <FileSpreadsheet className="w-4 h-4" />
-                )}
-                <span>새 구글 시트로 내보내기</span>
-              </button>
+          <div className="flex flex-wrap items-center gap-2.5">
+            {googleUser ? (
+              <>
+                <button
+                  onClick={handleExportToGoogleSheets}
+                  disabled={isGoogleLoading}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-600/20 cursor-pointer"
+                >
+                  {isGoogleLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <FileSpreadsheet className="w-4 h-4" />
+                  )}
+                  <span>새 구글 시트로 내보내기</span>
+                </button>
 
-              <button
-                onClick={handleGoogleLogout}
-                className="text-xs text-slate-400 hover:text-slate-200 underline transition-colors"
-              >
-                로그아웃
-              </button>
-            </>
-          ) : (
+                <button
+                  onClick={handleGoogleLogout}
+                  className="text-xs text-slate-400 hover:text-slate-200 underline transition-colors"
+                >
+                  로그아웃
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={handleGoogleLogin}
+                  disabled={isGoogleLoading}
+                  className="px-4 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-800 text-xs font-bold transition-all flex items-center gap-2 shadow cursor-pointer"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24">
+                    <path
+                      fill="#4285F4"
+                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                    />
+                  </svg>
+                  <span>Google 계정으로 로그인</span>
+                </button>
+
+                <button
+                  onClick={handleDownloadCsv}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Google 로그인 없이도 즉시 성적 파일을 다운로드할 수 있습니다"
+                >
+                  <Download className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>로그인 없이 CSV 다운로드</span>
+                </button>
+              </>
+            )}
+
             <button
-              onClick={handleGoogleLogin}
-              disabled={isGoogleLoading}
-              className="px-4 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-800 text-xs font-bold transition-all flex items-center gap-2 shadow cursor-pointer"
+              onClick={() => setShowDomainGuide((prev) => !prev)}
+              className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs flex items-center gap-1 transition-colors cursor-pointer"
+              title="GitHub 배포 시 구글 로그인 설정 방법 안내"
             >
-              <svg className="w-4 h-4" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                />
-              </svg>
-              <span>Google 계정으로 로그인</span>
+              <HelpCircle className="w-4 h-4 text-amber-400" />
+              <span className="hidden sm:inline">도메인 안내</span>
+              {showDomainGuide ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
-          )}
 
-          {exportUrl && (
-            <a
-              href={exportUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="px-3 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold flex items-center gap-1.5 transition-colors"
-            >
-              <span>생성된 시트 열기</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-          )}
+            {exportUrl && (
+              <a
+                href={exportUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold flex items-center gap-1.5 transition-colors"
+              >
+                <span>생성된 시트 열기</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            )}
+          </div>
         </div>
+
+        {/* GitHub Pages & Domain Guide Toggle Box */}
+        {showDomainGuide && (
+          <div className="mt-4 pt-4 border-t border-emerald-800/40 text-xs text-slate-300 space-y-2.5 bg-slate-950/40 p-4 rounded-xl">
+            <div className="flex items-start gap-2 text-amber-300 font-semibold">
+              <Info className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>GitHub Pages 배포 사이트에서 Google 로그인 오류가 발생하는 원인 & 해결 방법</span>
+            </div>
+            <p className="text-slate-300 leading-relaxed pl-6">
+              Google 및 Firebase Authentication은 보안 정책상 <strong className="text-white">사전에 승인된 도메인(Authorized Domains)</strong>에서만 OAuth 팝업 로그인을 허용합니다.
+              GitHub Pages 주소(<code className="text-cyan-300 bg-slate-800 px-1.5 py-0.5 rounded">{currentHostname || 'github.io'}</code>)를 Firebase 콘솔에 등록해야 정상 작동합니다.
+            </p>
+
+            <div className="pl-6 bg-slate-900/80 border border-slate-800 rounded-lg p-3 space-y-2">
+              <div className="font-bold text-white flex items-center gap-1.5">
+                <span>🔧 Firebase 콘솔에서 30초 만에 도메인 등록하는 방법:</span>
+              </div>
+              <ol className="list-decimal list-inside space-y-1 text-slate-300">
+                <li>
+                  <a
+                    href="https://console.firebase.google.com/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-cyan-400 hover:underline font-medium inline-flex items-center gap-1"
+                  >
+                    Firebase 콘솔 (console.firebase.google.com)
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                  에 접속하여 해당 프로젝트를 선택합니다.
+                </li>
+                <li>
+                  좌측 메뉴의 <strong className="text-white">빌드(Build) → Authentication → 설정(Settings)</strong> 탭으로 이동합니다.
+                </li>
+                <li>
+                  <strong className="text-white">승인된 도메인(Authorized domains)</strong> 목록에서 <strong className="text-emerald-400">[도메인 추가]</strong>를 클릭합니다.
+                </li>
+                <li>
+                  도메인 입력창에 <code className="text-amber-300 bg-slate-800 px-1 py-0.5 rounded">github.io</code> (또는 본인의 <code className="text-amber-300 bg-slate-800 px-1 py-0.5 rounded">{currentHostname}</code>)를 입력하고 저장합니다.
+                </li>
+                <li>설정 후 본 페이지를 새로고침하시면 Google 로그인이 즉시 정상 동작합니다!</li>
+              </ol>
+            </div>
+
+            <div className="pl-6 text-emerald-300 flex items-center gap-1.5 pt-1">
+              <span>✨ <strong>로그인 설정 없이 바로 사용하는 방법:</strong></span>
+              <span className="text-slate-300">우측 상단의 <strong>[CSV 엑셀 다운로드]</strong> 버튼이나 상단의 <strong>[GAS URL 설정]</strong>을 이용하시면 도메인 등록 없이도 학생 성적을 온전히 저장하고 엑셀로 관리하실 수 있습니다.</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {googleAuthError && (
-        <div className="mb-6 p-3.5 rounded-2xl bg-rose-950/60 border border-rose-800 text-rose-300 text-xs flex items-center justify-between shadow-lg">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-            <span>{googleAuthError}</span>
+        <div className="mb-6 p-4 rounded-2xl bg-rose-950/60 border border-rose-800 text-rose-300 text-xs shadow-lg space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 font-bold">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+              <span>{googleAuthError}</span>
+            </div>
+            <button
+              onClick={() => setGoogleAuthError(null)}
+              className="text-xs text-rose-400 hover:text-white underline ml-3 cursor-pointer shrink-0"
+            >
+              닫기
+            </button>
           </div>
-          <button
-            onClick={() => setGoogleAuthError(null)}
-            className="text-xs text-rose-400 hover:text-white underline ml-3 cursor-pointer shrink-0"
-          >
-            닫기
-          </button>
+
+          {authErrorCode === 'auth/unauthorized-domain' && (
+            <div className="pl-6 text-slate-300 space-y-1.5">
+              <p>
+                현재 주소(<code className="text-amber-300 bg-slate-900 px-1 py-0.5 rounded">{currentHostname}</code>)가 Firebase 승인 도메인 목록에 없어서 발생한 보안 오류입니다.
+              </p>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  onClick={() => setShowDomainGuide(true)}
+                  className="px-2.5 py-1 rounded bg-amber-900/60 hover:bg-amber-800 border border-amber-700 text-amber-200 text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  📖 도메인 등록 해결 가이드 열기
+                </button>
+                <button
+                  onClick={handleDownloadCsv}
+                  className="px-2.5 py-1 rounded bg-emerald-900/60 hover:bg-emerald-800 border border-emerald-700 text-emerald-200 text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1"
+                >
+                  <Download className="w-3 h-3" />
+                  <span>로그인 없이 CSV로 즉시 다운로드</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

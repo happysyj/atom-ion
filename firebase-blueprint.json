@@ -1,0 +1,45 @@
+{
+  "entities": {
+    "StudentRecord": {
+      "title": "StudentRecord",
+      "description": "Student quiz result record with score and time",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique record identifier"
+        },
+        "name": {
+          "type": "string",
+          "description": "Student nickname",
+          "maxLength": 50
+        },
+        "score": {
+          "type": "number",
+          "description": "Total quiz score"
+        },
+        "time": {
+          "type": "number",
+          "description": "Time elapsed in seconds"
+        },
+        "date": {
+          "type": "string",
+          "description": "Date and time of record submission",
+          "maxLength": 50
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp of creation",
+          "maxLength": 50
+        }
+      },
+      "required": ["name", "score", "time", "date"]
+    }
+  },
+  "firestore": {
+    "/records/{recordId}": {
+      "schema": "StudentRecord",
+      "description": "Collection of student quiz game records"
+    }
+  }
+}

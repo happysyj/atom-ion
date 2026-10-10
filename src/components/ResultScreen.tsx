@@ -46,11 +46,13 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
     loading: boolean;
     message: string;
     fromGAS: boolean;
+    fromFirestore?: boolean;
   }>({
     saved: false,
     loading: true,
     message: '성적 데이터를 동기화하는 중입니다...',
     fromGAS: false,
+    fromFirestore: false,
   });
 
   // Calculate guaranteed total score from all 4 stages
@@ -104,6 +106,7 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
           loading: false,
           message: saveRes.message,
           fromGAS: saveRes.fromGAS,
+          fromFirestore: saveRes.fromFirestore,
         });
 
         // Fetch latest leaderboard
@@ -283,11 +286,15 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
             <div>
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 실시간 상위 5위 리더보드
-                {saveStatus.fromGAS && (
+                {saveStatus.fromFirestore ? (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-normal">
+                    클라우드 DB 동기화됨
+                  </span>
+                ) : saveStatus.fromGAS ? (
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700 font-normal">
                     스프레드시트 동기화됨
                   </span>
-                )}
+                ) : null}
               </h2>
               <p className="text-xs text-slate-400">
                 랭킹 기준: 1순위 높은 점수, 2순위 짧은 소요 시간

@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function isValidRecord(data) {
+      return data.keys().hasAll(['name', 'score', 'time', 'date']) &&
+             data.keys().hasOnly(['id', 'name', 'score', 'time', 'date', 'createdAt']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 50 &&
+             data.score is number && data.score >= 0 && data.score <= 10000 &&
+             data.time is number && data.time >= 0 && data.time <= 86400 &&
+             data.date is string && data.date.size() <= 50;
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Connection test document
+    match /test/{docId} {
+      allow read: if true;
+    }
+
+    // Student quiz records
+    match /records/{recordId} {
+      allow read: if true;
+      allow create: if isValidId(recordId) && isValidRecord(incoming());
+      allow update: if false;
+      allow delete: if request.auth != null;
+    }
+  }
+}

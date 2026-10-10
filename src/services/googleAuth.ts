@@ -2,19 +2,14 @@
  * Firebase Authentication & Google OAuth Token Management
  * Configured with Google Sheets API scope as provisioned.
  */
-import { initializeApp } from 'firebase/app';
 import {
-  getAuth,
   signInWithPopup,
   GoogleAuthProvider,
   onAuthStateChanged,
   User,
   signOut,
 } from 'firebase/auth';
-import firebaseConfig from '../../firebase-applet-config.json';
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+import { auth } from './firebase';
 
 const provider = new GoogleAuthProvider();
 // Google Sheets scope configured via set_up_oauth
